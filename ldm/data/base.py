@@ -52,7 +52,7 @@ class Txt2ImgIterableBaseDataset(IterableDataset):
             image = cv2.imdecode(np.fromfile(file_name, dtype=np.uint8), 1)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = torch.from_numpy(image) / 255
-            yield {"txt": txt_, "jpg":image}
+            yield {"caption": txt_, "image":image}
 
 
     def _get_file_info(self, file_path):
