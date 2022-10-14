@@ -24,6 +24,7 @@ from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianD
 from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.modules.diffusionmodules.openaimodel import AttentionPool2d
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -484,7 +485,6 @@ class LatentDiffusion(DDPM):
             self.restarted_from_ckpt = True
 
     def configure_sharded_model(self) -> None:
-        from ldm.modules.diffusionmodules.openaimodel import AttentionPool2d
         self.model = DiffusionWrapper(self.unet_config, self.conditioning_key)
         count_params(self.model, verbose=True)
         if self.use_ema:
