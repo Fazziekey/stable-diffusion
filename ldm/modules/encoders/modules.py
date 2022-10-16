@@ -5,6 +5,7 @@ import clip
 from einops import rearrange, repeat
 from transformers import CLIPTokenizer, CLIPTextModel
 import kornia
+from transformers.models.clip.modeling_clip import CLIPTextTransformer
 
 from ldm.modules.x_transformer import Encoder, TransformerWrapper  # TODO: can we directly rely on lucidrains code and simply add this as a reuirement? --> test
 
@@ -140,6 +141,8 @@ class FrozenCLIPEmbedder(AbstractEncoder):
         super().__init__()
         self.tokenizer = CLIPTokenizer.from_pretrained(version)
         self.transformer = CLIPTextModel.from_pretrained(version)
+        # print(self.transformer.modules())
+        # print("check model dtyoe: {}, {}".format(self.tokenizer.dtype, self.transformer.dtype))
         self.device = device
         self.max_length = max_length
         self.freeze()
@@ -152,7 +155,9 @@ class FrozenCLIPEmbedder(AbstractEncoder):
     def forward(self, text):
         batch_encoding = self.tokenizer(text, truncation=True, max_length=self.max_length, return_length=True,
                                         return_overflowing_tokens=False, padding="max_length", return_tensors="pt")
+        # tokens = batch_encoding["input_ids"].to(self.device)
         tokens = batch_encoding["input_ids"].to(self.device)
+        print("token type: {}".format(tokens.dtype))
         outputs = self.transformer(input_ids=tokens)
 
         z = outputs.last_hidden_state

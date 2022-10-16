@@ -103,19 +103,29 @@ class DDPM(pl.LightningModule):
 
         if monitor is not None:
             self.monitor = monitor
-        if ckpt_path is not None:
-            self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys, only_model=load_only_unet)
-
-        self.register_schedule(given_betas=given_betas, beta_schedule=beta_schedule, timesteps=timesteps,
-                               linear_start=linear_start, linear_end=linear_end, cosine_s=cosine_s)
+        self.ckpt_path = ckpt_path
+        self.ignore_keys = ignore_keys
+        self.load_only_unet = load_only_unet
+        self.given_betas = given_betas
+        self.beta_schedule = beta_schedule
+        self.timesteps = timesteps
+        self.linear_start = linear_start
+        self.linear_end = linear_end
+        self.cosine_s = cosine_s
+        # if ckpt_path is not None:
+        #     self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys, only_model=load_only_unet)
+        #
+        # self.register_schedule(given_betas=given_betas, beta_schedule=beta_schedule, timesteps=timesteps,
+        #                        linear_start=linear_start, linear_end=linear_end, cosine_s=cosine_s)
 
         self.loss_type = loss_type
 
         self.learn_logvar = learn_logvar
-        self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
-        if self.learn_logvar:
-            self.logvar = nn.Parameter(self.logvar, requires_grad=True)
-            self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+        self.logvar_init = logvar_init
+        # self.logvar = torch.full(fill_value=logvar_init, size=(self.num_timesteps,))
+        # if self.learn_logvar:
+        #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+        #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
 
 
 
@@ -345,7 +355,8 @@ class DDPM(pl.LightningModule):
         if len(x.shape) == 3:
             x = x[..., None]
         x = rearrange(x, 'b h w c -> b c h w')
-        x = x.to(memory_format=torch.contiguous_format).float()
+        # x = x.to(memory_format=torch.contiguous_format).float()
+        x = x.to(memory_format=torch.contiguous_format).float().half()
         return x
 
     def shared_step(self, batch):
@@ -491,6 +502,18 @@ class LatentDiffusion(DDPM):
             self.model_ema = LitEma(self.model)
             print(f"Keeping EMAs of {len(list(self.model_ema.buffers()))}.")
 
+
+        self.register_schedule(given_betas=self.given_betas, beta_schedule=self.beta_schedule, timesteps=self.timesteps,
+                               linear_start=self.linear_start, linear_end=self.linear_end, cosine_s=self.cosine_s)
+
+        self.logvar = torch.full(fill_value=self.logvar_init, size=(self.num_timesteps,))
+        if self.learn_logvar:
+            self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+            # self.logvar = nn.Parameter(self.logvar, requires_grad=True)
+        if self.ckpt_path is not None:
+            self.init_from_ckpt(self.ckpt_path, self.ignore_keys)
+            self.restarted_from_ckpt = True
+
         self.instantiate_first_stage(self.first_stage_config)
         self.instantiate_cond_stage(self.cond_stage_config)
 
@@ -503,7 +526,8 @@ class LatentDiffusion(DDPM):
 
     @rank_zero_only
     @torch.no_grad()
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+    # def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+    def on_train_batch_start(self, batch, batch_idx):
         # only for very first batch
         if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
             assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'

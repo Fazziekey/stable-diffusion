@@ -212,6 +212,10 @@ def make_attn(in_channels, attn_type="vanilla"):
     else:
         return LinAttnBlock(in_channels)
 
+class temb_module(nn.Module):
+    def __init__(self):
+        super().__init__()
+        pass
 
 class Model(nn.Module):
     def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), num_res_blocks,
@@ -229,7 +233,8 @@ class Model(nn.Module):
         self.use_timestep = use_timestep
         if self.use_timestep:
             # timestep embedding
-            self.temb = nn.Module()
+            # self.temb = nn.Module()
+            self.temb = temb_module()
             self.temb.dense = nn.ModuleList([
                 torch.nn.Linear(self.ch,
                                 self.temb_ch),
@@ -260,7 +265,8 @@ class Model(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(make_attn(block_in, attn_type=attn_type))
-            down = nn.Module()
+            # down = nn.Module()
+            down = Down_module()
             down.block = block
             down.attn = attn
             if i_level != self.num_resolutions-1:
@@ -269,7 +275,8 @@ class Model(nn.Module):
             self.down.append(down)
 
         # middle
-        self.mid = nn.Module()
+        # self.mid = nn.Module()
+        self.mid = Mid_module()
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
@@ -297,7 +304,8 @@ class Model(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(make_attn(block_in, attn_type=attn_type))
-            up = nn.Module()
+            # up = nn.Module()
+            up = Up_module()
             up.block = block
             up.attn = attn
             if i_level != 0:
@@ -364,6 +372,21 @@ class Model(nn.Module):
     def get_last_layer(self):
         return self.conv_out.weight
 
+class Down_module(nn.Module):
+    def __init__(self):
+        super().__init__()
+        pass
+
+class Up_module(nn.Module):
+    def __init__(self):
+        super().__init__()
+        pass
+
+class Mid_module(nn.Module):
+    def __init__(self):
+        super().__init__()
+        pass
+
 
 class Encoder(nn.Module):
     def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), num_res_blocks,
@@ -403,7 +426,8 @@ class Encoder(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(make_attn(block_in, attn_type=attn_type))
-            down = nn.Module()
+            # down = nn.Module()
+            down = Down_module()
             down.block = block
             down.attn = attn
             if i_level != self.num_resolutions-1:
@@ -412,7 +436,8 @@ class Encoder(nn.Module):
             self.down.append(down)
 
         # middle
-        self.mid = nn.Module()
+        # self.mid = nn.Module()
+        self.mid = Mid_module()
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
@@ -491,7 +516,8 @@ class Decoder(nn.Module):
                                        padding=1)
 
         # middle
-        self.mid = nn.Module()
+        # self.mid = nn.Module()
+        self.mid = Mid_module()
         self.mid.block_1 = ResnetBlock(in_channels=block_in,
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
@@ -516,7 +542,8 @@ class Decoder(nn.Module):
                 block_in = block_out
                 if curr_res in attn_resolutions:
                     attn.append(make_attn(block_in, attn_type=attn_type))
-            up = nn.Module()
+            # up = nn.Module()
+            up = Up_module()
             up.block = block
             up.attn = attn
             if i_level != 0:
