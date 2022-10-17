@@ -1,11 +1,3 @@
-"""
-wild mixture of
-https://github.com/lucidrains/denoising-diffusion-pytorch/blob/7706bdfc6f527f58d33f84b7b522e61e6e3164b3/denoising_diffusion_pytorch/denoising_diffusion_pytorch.py
-https://github.com/openai/improved-diffusion/blob/e94489283bb876ac1477d5dd7709bbbd2d9902ce/improved_diffusion/gaussian_diffusion.py
-https://github.com/CompVis/taming-transformers
--- merci
-"""
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -25,6 +17,26 @@ from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, Autoenc
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.modules.diffusionmodules.openaimodel import AttentionPool2d
+from ldm.modules.x_transformer import *
+from ldm.modules.encoders.modules import *
+
+from ldm.modules.ema import LitEma
+from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
+from ldm.models.autoencoder import *
+from ldm.models.diffusion.ddim import *
+from ldm.modules.diffusionmodules.openaimodel import *
+from ldm.modules.diffusionmodules.model import *
+
+from ldm.modules.diffusionmodules.model import Model, Encoder, Decoder
+
+from ldm.util import instantiate_from_config
+import clip
+from einops import rearrange, repeat
+from transformers import CLIPTokenizer, CLIPTextModel
+import kornia
+from clip.model import Bottleneck
+from clip.model import CLIP
+from clip.model import *
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
