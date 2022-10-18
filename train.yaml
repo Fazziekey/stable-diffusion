@@ -42,6 +42,7 @@ model:
         context_dim: 768
         use_checkpoint: True
         legacy: False
+        use_fp16: True
 
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
@@ -72,7 +73,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 1
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset

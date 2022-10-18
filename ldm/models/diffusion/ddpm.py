@@ -27,16 +27,14 @@ from ldm.models.diffusion.ddim import *
 from ldm.modules.diffusionmodules.openaimodel import *
 from ldm.modules.diffusionmodules.model import *
 
+
 from ldm.modules.diffusionmodules.model import Model, Encoder, Decoder
 
 from ldm.util import instantiate_from_config
-import clip
+
 from einops import rearrange, repeat
-from transformers import CLIPTokenizer, CLIPTextModel
-import kornia
-from clip.model import Bottleneck
-from clip.model import CLIP
-from clip.model import *
+
+
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -304,6 +302,9 @@ class DDPM(pl.LightningModule):
                 extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise)
 
     def get_loss(self, pred, target, mean=True):
+        print("target dtype", target.dtype)
+        target = target.half()
+        print("target dtype", target.dtype)
         if self.loss_type == 'l1':
             loss = (target - pred).abs()
             if mean:
@@ -315,7 +316,7 @@ class DDPM(pl.LightningModule):
                 loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
         else:
             raise NotImplementedError("unknown loss type '{loss_type}'")
-
+        print("---------loss dtype", loss.dtype)
         return loss
 
     def p_losses(self, x_start, t, noise=None):
@@ -526,6 +527,11 @@ class LatentDiffusion(DDPM):
             self.init_from_ckpt(self.ckpt_path, self.ignore_keys)
             self.restarted_from_ckpt = True
 
+        # TODO()
+        # for p in self.model.modules():
+        #     if not p.parameters().data.is_contiguous:
+        #     p.data = p.data.contiguous()
+    
         self.instantiate_first_stage(self.first_stage_config)
         self.instantiate_cond_stage(self.cond_stage_config)
 

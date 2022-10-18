@@ -168,7 +168,7 @@ def timestep_embedding(timesteps, dim, max_period=10000, repeat_only=False):
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     else:
         embedding = repeat(timesteps, 'b -> b d', d=dim)
-    return embedding
+    return embedding.half()
 
 
 def zero_module(module):
@@ -202,7 +202,8 @@ def normalization(channels):
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    return GroupNorm32(32, channels)
+    # return GroupNorm32(32, channels)
+    return GroupNorm16(16, channels)
 
 
 # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
@@ -210,6 +211,9 @@ class SiLU(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
+class GroupNorm16(nn.GroupNorm):
+    def forward(self, x):
+        return super().forward(x.half()).type(x.dtype)
 
 class GroupNorm32(nn.GroupNorm):
     def forward(self, x):
