@@ -22,6 +22,9 @@ from ldm.modules.attention import SpatialTransformer
 
 # dummy replace
 def convert_module_to_f16(x):
+    # for n,p in x.named_parameter():
+    #     print(f"convert module {n} to_f16")
+    #     p.data = p.data.half()
     pass
 
 def convert_module_to_f32(x):
@@ -690,6 +693,8 @@ class UNetModel(nn.Module):
             conv_nd(dims, model_channels, n_embed, 1),
             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
         )
+        # if use_fp16:
+            # self.convert_to_fp16()
 
     def convert_to_fp16(self):
         """
@@ -739,7 +744,7 @@ class UNetModel(nn.Module):
         if self.predict_codebook_ids:
             return self.id_predictor(h)
         else:
-            print("h", h.dtype)
+            print("openai h", h.dtype)
             return self.out(h)
 
 

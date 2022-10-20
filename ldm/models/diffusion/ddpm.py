@@ -370,6 +370,7 @@ class DDPM(pl.LightningModule):
         x = rearrange(x, 'b h w c -> b c h w')
         # x = x.to(memory_format=torch.contiguous_format).float()
         x = x.to(memory_format=torch.contiguous_format).float().half()
+        print("input dtype", x.dtype)
         return x
 
     def shared_step(self, batch):
@@ -1470,6 +1471,7 @@ class DiffusionWrapper(pl.LightningModule):
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
+        print("x dtype", x.dtype)
         if self.conditioning_key is None:
             out = self.diffusion_model(x, t)
         elif self.conditioning_key == 'concat':
