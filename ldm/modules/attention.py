@@ -168,9 +168,9 @@ class CrossAttention(nn.Module):
         )
 
     def forward(self, x, context=None, mask=None):
-        print("x.dtype",x.dtype)
-        h = self.heads
 
+        h = self.heads
+        # print("x.dtype",x.dtype,"weight",self.to_q.weight.dtype)
         q = self.to_q(x)
 
         context = default(context, x)
@@ -195,7 +195,7 @@ class CrossAttention(nn.Module):
 
 
 class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True):
+    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=False):
         super().__init__()
         self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
@@ -210,10 +210,11 @@ class BasicTransformerBlock(nn.Module):
         return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
 
     def _forward(self, x, context=None):
-        x = self.attn1(self.norm1(x.float()).half()) + x
-        x = self.attn2(self.norm2(x.float()).half(), context=context) + x
-        x = self.ff(self.norm3(x.float()).half()) + x
+        x = self.attn1(self.norm1(x)) + x
+        x = self.attn2(self.norm2(x), context=context) + x
+        x = self.ff(self.norm3(x)) + x
         return x
+        
 
 
 class SpatialTransformer(nn.Module):
@@ -225,7 +226,7 @@ class SpatialTransformer(nn.Module):
     Finally, reshape to image
     """
     def __init__(self, in_channels, n_heads, d_head,
-                 depth=1, dropout=0., context_dim=None):
+                 depth=1, dropout=0., context_dim=None, use_checkpoint=False):
         super().__init__()
         self.in_channels = in_channels
         inner_dim = n_heads * d_head
@@ -238,7 +239,7 @@ class SpatialTransformer(nn.Module):
                                  padding=0)
 
         self.transformer_blocks = nn.ModuleList(
-            [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim)
+            [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim, checkpoint=use_checkpoint)
                 for d in range(depth)]
         )
 
@@ -247,6 +248,7 @@ class SpatialTransformer(nn.Module):
                                               kernel_size=1,
                                               stride=1,
                                               padding=0))
+
 
     def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention
