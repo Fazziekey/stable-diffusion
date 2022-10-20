@@ -168,9 +168,9 @@ class CrossAttention(nn.Module):
         )
 
     def forward(self, x, context=None, mask=None):
+        print("x.dtype",x.dtype)
         h = self.heads
 
-        x.contiguous()
         q = self.to_q(x)
 
         context = default(context, x)
@@ -210,9 +210,9 @@ class BasicTransformerBlock(nn.Module):
         return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
 
     def _forward(self, x, context=None):
-        x = self.attn1(self.norm1(x)) + x
-        x = self.attn2(self.norm2(x), context=context) + x
-        x = self.ff(self.norm3(x)) + x
+        x = self.attn1(self.norm1(x.float()).half()) + x
+        x = self.attn2(self.norm2(x.float()).half(), context=context) + x
+        x = self.ff(self.norm3(x.float()).half()) + x
         return x
 
 
