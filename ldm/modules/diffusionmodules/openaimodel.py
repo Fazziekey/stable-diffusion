@@ -744,7 +744,6 @@ class UNetModel(nn.Module):
         if self.predict_codebook_ids:
             return self.id_predictor(h)
         else:
-            print("openai h", h.dtype)
             return self.out(h)
 
 

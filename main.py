@@ -407,11 +407,12 @@ class ImageLogger(Callback):
             return True
         return False
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
-            self.log_img(pl_module, batch, batch_idx, split="train")
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        # if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
+        #     self.log_img(pl_module, batch, batch_idx, split="train")
+        pass
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if not self.disabled and pl_module.global_step > 0:
             self.log_img(pl_module, batch, batch_idx, split="val")
         if hasattr(pl_module, 'calibrate_grad_norm'):
@@ -586,7 +587,7 @@ if __name__ == "__main__":
             "tensorboard":{
                 "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params":{
-                    "save_dir": "/home/lclzm/diff_log/",
+                    "save_dir": "/home/lcmql/diff_log/",
                     "name": "diff_tb",
                     "log_graph": True
                 }
@@ -754,6 +755,9 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
+                for name, m in model.named_parameters():
+                    print(name)
+                print("-----start train-----")
                 trainer.fit(model, data)
             except Exception:
                 melk()
