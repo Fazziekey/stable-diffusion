@@ -14,6 +14,7 @@
 # }
 
 # CUDA_VISIBLE_DEVICES_set_n_least_memory_usage 4
+export PYTHONPATH=/home/lcmql/debug/ColossalAI:$PYTHONPATH
 
 CUDA_LAUNCH_BLOCKING=1
-python main.py --logdir /home/lcmql/data -t --postfix test -b train.yaml 
+python main.py --logdir /home/lcmql/data -t --postfix test -b train_deepspeed.yaml 

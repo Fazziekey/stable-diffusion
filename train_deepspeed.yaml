@@ -84,19 +84,15 @@ data:
 
 lightning:
   trainer:
-    gpus: '0'
+    gpus: '0,1'
     log_gpu_memory: all
     precision: 16
     strategy:
-      # target: pytorch_lightning.strategies.DDPStrategy
-      # params:
-      #   find_unused_parameters: False
-      target: pytorch_lightning.strategies.ColossalAIStrategy
+      target: pytorch_lightning.strategies.DeepSpeedStrategy
       params:
-        use_chunk: False
-        enable_distributed_storage: True,
-        placement_policy: cuda
-        initial_scale: 32
+        zero_optimization: True
+        offload_optimizer: False
+        offload_parameters: False
     log_every_n_steps: 2
 #    max_steps: 6o
     logger: True
