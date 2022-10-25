@@ -73,7 +73,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 2
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset
@@ -96,5 +96,5 @@ lightning:
     log_every_n_steps: 2
 #    max_steps: 6o
     logger: True
-    default_root_dir: "/home/lcmql/diff_log/"
+    default_root_dir: "/tmp/diff_log/"
     profiler: pytorch
