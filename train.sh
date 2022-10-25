@@ -17,4 +17,4 @@
 export PYTHONPATH=/home/lcmql/debug/ColossalAI:$PYTHONPATH
 
 CUDA_LAUNCH_BLOCKING=1
-python main.py --logdir /home/lcmql/data -t --postfix test -b train_deepspeed.yaml 
+python main.py --logdir /tmp/data -t --postfix test -b train_ddp.yaml 
