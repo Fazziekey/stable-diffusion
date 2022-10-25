@@ -178,7 +178,7 @@ class FrozenCLIPEmbedder(AbstractEncoder):
                                         return_overflowing_tokens=False, padding="max_length", return_tensors="pt")
         # tokens = batch_encoding["input_ids"].to(self.device)
         tokens = batch_encoding["input_ids"].to(self.device)
-        print("token type: {}".format(tokens.dtype))
+        # print("token type: {}".format(tokens.dtype))
         outputs = self.transformer(input_ids=tokens)
 
         z = outputs.last_hidden_state
