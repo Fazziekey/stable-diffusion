@@ -82,6 +82,7 @@ class DDPM(pl.LightningModule):
                  use_positional_encodings=False,
                  learn_logvar=False,
                  logvar_init=0.,
+                 use_fp16 = False,
                  ):
         super().__init__()
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
@@ -137,6 +138,8 @@ class DDPM(pl.LightningModule):
         #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
         #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
 
+        if use_fp16:
+            self.unet_config["params"].update({"use_fp16": True})
 
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -470,6 +473,7 @@ class LatentDiffusion(DDPM):
                  conditioning_key=None,
                  scale_factor=1.0,
                  scale_by_std=False,
+                 use_fp16=False,
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
@@ -481,7 +485,7 @@ class LatentDiffusion(DDPM):
             conditioning_key = None
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
-        super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
+        super().__init__(conditioning_key=conditioning_key, use_fp16=use_fp16 *args, **kwargs)
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
@@ -495,6 +499,8 @@ class LatentDiffusion(DDPM):
             self.register_buffer('scale_factor', torch.tensor(scale_factor))
         self.first_stage_config = first_stage_config
         self.cond_stage_config = cond_stage_config
+        if use_fp16:
+            self.cond_stage_config["params"].update({"use_fp16": True})
         # self.instantiate_first_stage(first_stage_config)
         # self.instantiate_cond_stage(cond_stage_config)
         self.cond_stage_forward = cond_stage_forward

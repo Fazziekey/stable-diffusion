@@ -42,7 +42,6 @@ model:
         context_dim: 768
         use_checkpoint: False
         legacy: False
-        use_fp16: True
 
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
@@ -86,7 +85,7 @@ lightning:
   trainer:
     gpus: '0,1,2,3'
     log_gpu_memory: all
-    precision: 16
+    precision: 32
     strategy:
       target: pytorch_lightning.strategies.DDPStrategy
       params:
