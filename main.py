@@ -10,9 +10,6 @@ from omegaconf import OmegaConf
 from torch.utils.data import random_split, DataLoader, Dataset, Subset
 from functools import partial
 from PIL import Image
-# from pytorch_lightning.strategies.colossalai import ColossalAIStrategy
-# from colossalai.nn.lr_scheduler import CosineAnnealingWarmupLR
-from colossalai.nn.optimizer import HybridAdam
 
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
@@ -145,6 +142,14 @@ def get_parser(**parser_kwargs):
         const=True,
         default=True,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
+    )
+    parser.add_argument(
+        "--use_fp16",
+        type=str2bool,
+        nargs="?",
+        const=True,
+        default=True,
+        help="whether to use fp16",
     )
     return parser
 
@@ -545,27 +550,32 @@ if __name__ == "__main__":
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-        # default to ddp
-        # trainer_config["accelerator"] = "ddp"
-        trainer_config["accelerator"] = "cuda"
+
+        # trainer_config["accelerator"] = "cuda"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
-        if not "gpus" in trainer_config:
+
+        if not trainer_config["accelerator"] == "gpus":
             del trainer_config["accelerator"]
             cpu = True
+            print("Running on CPU")
         else:
-            gpuinfo = trainer_config["gpus"]
-            print(f"Running on GPUs {gpuinfo}")
             cpu = False
+            print("Running on GPU")
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 
         # model
+        use_fp16 = trainer_config.get("precision", 32) == 16
+        if use_fp16:
+            config.model["params"].update({"use_fp16": True})
+
         model = instantiate_from_config(config.model)
 
         # trainer and callbacks
         trainer_kwargs = dict()
 
+        # config the logger
         # default logger configs
         default_logger_cfgs = {
             "wandb": {
@@ -577,31 +587,36 @@ if __name__ == "__main__":
                     "id": nowname,
                 }
             },
-            # "testtube": {
-            #     "target": "pytorch_lightning.loggers.TestTubeLogger",
-            #     "params": {
-            #         "name": "testtube",
-            #         "save_dir": logdir,
-            #     }
-            # },
             "tensorboard":{
                 "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params":{
-                    "save_dir": "/home/lcmql/diff_log/",
+                    "save_dir": logdir,
                     "name": "diff_tb",
                     "log_graph": True
                 }
             }
         }
-        trainer_kwargs["strategy"] = instantiate_from_config(trainer_config['strategy'])
-        # default_logger_cfg = {}
+
         default_logger_cfg = default_logger_cfgs["tensorboard"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
-            logger_cfg = OmegaConf.create()
-        logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
+            logger_cfg = default_logger_cfg
         trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
+
+        # confif the strategy, defualt is ddp
+        if "strategy" in lightning_config:
+            strategy_cfg = lightning_config.strategy
+        else:
+            strategy_cfg = {
+                "target": "pytorch_lightning.strategies.DDPStrategy",
+                "params": {
+                    "ddp_find_unused_parameters": False
+                }
+            }
+
+        trainer_kwargs["strategy"] = instantiate_from_config(strategy_cfg)
+
 
         # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
         # specify which metric is used to determine best models

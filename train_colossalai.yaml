@@ -42,7 +42,6 @@ model:
         context_dim: 768
         use_checkpoint: False
         legacy: False
-        use_fp16: True
 
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
@@ -84,9 +83,11 @@ data:
 
 lightning:
   trainer:
-    gpus: '1'
+    accelerator: 'gpu' 
+    devices: 4
     log_gpu_memory: all
     precision: 16
+    auto_select_gpus: True
     strategy:
       target: pytorch_lightning.strategies.ColossalAIStrategy
       params:
@@ -99,3 +100,11 @@ lightning:
     default_root_dir: "/tmp/diff_log/"
     profiler: pytorch
 
+  logger_config:
+    wandb:
+      target: pytorch_lightning.loggers.WandbLogger
+      params:
+          name: nowname
+          save_dir: "/tmp/diff_log/"
+          offline: opt.debug
+          id: nowname
