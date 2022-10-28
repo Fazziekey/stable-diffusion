@@ -10,6 +10,10 @@ from omegaconf import OmegaConf
 from torch.utils.data import random_split, DataLoader, Dataset, Subset
 from functools import partial
 from PIL import Image
+# from pytorch_lightning.strategies.colossalai import ColossalAIStrategy
+# from colossalai.nn.lr_scheduler import CosineAnnealingWarmupLR
+from colossalai.nn.optimizer import HybridAdam
+from prefetch_generator import BackgroundGenerator
 
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
@@ -42,6 +46,11 @@ from ldm.models.diffusion.ddim import *
 from ldm.modules.diffusionmodules.openaimodel import *
 from ldm.modules.diffusionmodules.model import *
 from ldm.modules.diffusionmodules.model import Decoder, Encoder, Up_module, Down_module, Mid_module, temb_module
+
+class DataLoaderX(DataLoader):
+
+    def __iter__(self):
+        return BackgroundGenerator(super().__iter__())
 
 
 def get_parser(**parser_kwargs):
@@ -231,7 +240,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["train"], batch_size=self.batch_size,
+        return DataLoaderX(self.datasets["train"], batch_size=self.batch_size,
                           num_workers=self.num_workers, shuffle=False if is_iterable_dataset else True,
                           worker_init_fn=init_fn)
 
@@ -240,7 +249,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["validation"],
+        return DataLoaderX(self.datasets["validation"],
                           batch_size=self.batch_size,
                           num_workers=self.num_workers,
                           worker_init_fn=init_fn,
@@ -256,7 +265,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         # do not shuffle dataloader for iterable dataset
         shuffle = shuffle and (not is_iterable_dataset)
 
-        return DataLoader(self.datasets["test"], batch_size=self.batch_size,
+        return DataLoaderX(self.datasets["test"], batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn, shuffle=shuffle)
 
     def _predict_dataloader(self, shuffle=False):
@@ -264,7 +273,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["predict"], batch_size=self.batch_size,
+        return DataLoaderX(self.datasets["predict"], batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn)
 
 
@@ -427,6 +436,13 @@ class ImageLogger(Callback):
 
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
+
+    def on_train_start(self, trainer, pl_module):
+        rank_zero_info("Training is starting")
+
+    def on_train_end(self, trainer, pl_module):
+        rank_zero_info("Training is ending")
+
     def on_train_epoch_start(self, trainer, pl_module):
         # Reset the memory use counter
         torch.cuda.reset_peak_memory_stats(trainer.strategy.root_device.index)
@@ -439,8 +455,8 @@ class CUDACallback(Callback):
         epoch_time = time.time() - self.start_time
 
         try:
-            max_memory = trainer.training_type_plugin.reduce(max_memory)
-            epoch_time = trainer.training_type_plugin.reduce(epoch_time)
+            max_memory = trainer.strategy.reduce(max_memory)
+            epoch_time = trainer.strategy.reduce(epoch_time)
 
             rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
             rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")
@@ -550,12 +566,12 @@ if __name__ == "__main__":
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-
-        # trainer_config["accelerator"] = "cuda"
+  
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
 
-        if not trainer_config["accelerator"] == "gpus":
+        print(trainer_config)
+        if not trainer_config["accelerator"] == "gpu":
             del trainer_config["accelerator"]
             cpu = True
             print("Running on CPU")
@@ -569,7 +585,7 @@ if __name__ == "__main__":
         use_fp16 = trainer_config.get("precision", 32) == 16
         if use_fp16:
             config.model["params"].update({"use_fp16": True})
-
+            print("Using FP16 = {}".format(config.model["params"]["use_fp16"]))
         model = instantiate_from_config(config.model)
 
         # trainer and callbacks
@@ -602,21 +618,23 @@ if __name__ == "__main__":
             logger_cfg = lightning_config.logger
         else:
             logger_cfg = default_logger_cfg
+        logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
         trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
 
-        # confif the strategy, defualt is ddp
-        if "strategy" in lightning_config:
-            strategy_cfg = lightning_config.strategy
+        # config the strategy, defualt is ddp
+        if "strategy" in trainer_config:
+            strategy_cfg = trainer_config["strategy"]
+            print("Using strategy: {}".format(strategy_cfg["target"]))
         else:
             strategy_cfg = {
                 "target": "pytorch_lightning.strategies.DDPStrategy",
                 "params": {
-                    "ddp_find_unused_parameters": False
+                    "find_unused_parameters": False
                 }
             }
+            print("Using strategy: DDPStrategy")
 
         trainer_kwargs["strategy"] = instantiate_from_config(strategy_cfg)
-
 
         # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
         # specify which metric is used to determine best models
@@ -727,7 +745,7 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            ngpu = trainer_config["devices"]
         else:
             ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:
@@ -772,13 +790,12 @@ if __name__ == "__main__":
             try:
                 for name, m in model.named_parameters():
                     print(name)
-                print("-----start train-----")
                 trainer.fit(model, data)
             except Exception:
                 melk()
                 raise
-        if not opt.no_test and not trainer.interrupted:
-            trainer.test(model, data)
+        # if not opt.no_test and not trainer.interrupted:
+        #     trainer.test(model, data)
     except Exception:
         if opt.debug and trainer.global_rank == 0:
             try:

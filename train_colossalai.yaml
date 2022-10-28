@@ -68,11 +68,13 @@ model:
 
     cond_stage_config:
       target: ldm.modules.encoders.modules.FrozenCLIPEmbedder
+      params:
+        use_fp16: True
 
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 2
+    batch_size: 64
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset
@@ -87,7 +89,7 @@ lightning:
     devices: 4
     log_gpu_memory: all
     precision: 16
-    auto_select_gpus: True
+    auto_select_gpus: False
     strategy:
       target: pytorch_lightning.strategies.ColossalAIStrategy
       params:
