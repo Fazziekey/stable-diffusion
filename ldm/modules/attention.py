@@ -7,6 +7,22 @@ from einops import rearrange, repeat
 
 from ldm.modules.diffusionmodules.util import checkpoint
 
+try:
+    from ldm.modules.flash_attention import flash_attention_qkv, flash_attention_q_kv, triton_flash_attention, TRITON_AVAILABLE
+    FlASH_AVAILABLE = True
+except:
+    FlASH_AVAILABLE = False
+
+USE_FLASH = False
+
+
+def enable_flash_attention():
+    global USE_FLASH
+    USE_FLASH = True
+    if FlASH_AVAILABLE is False:
+        print("""Please install triton and flash attention to activate new attention kernel.\n 
+            Use \'pip install triton==2.0.0.dev20221011 git+https://github.com/HazyResearch/flash-attention.git@c422fee3776eb3ea24e011ef641fd5fbeb212623#egg=flash_attn\'""")
+
 
 def exists(val):
     return val is not None
@@ -168,30 +184,62 @@ class CrossAttention(nn.Module):
         )
 
     def forward(self, x, context=None, mask=None):
-
-        h = self.heads
-        # print("x.dtype",x.dtype,"weight",self.to_q.weight.dtype)
         q = self.to_q(x)
-
         context = default(context, x)
         k = self.to_k(context)
         v = self.to_v(context)
+        dim_head = q.shape[-1] / self.heads
 
+        if USE_FLASH and FlASH_AVAILABLE and (dim_head <= 128) and ((dim_head % 8) == 0):
+            if q.shape[1] == k.shape[1]:
+                if TRITON_AVAILABLE and k.shape[-1] in (16, 32, 64, 128):
+                    out = self._triton_flash_attention(q, k, v)
+                else:
+                    out = self._flash_attention_qkv(q, k, v)
+            else:
+                out = self._flash_attention_q_kv(q, k, v)
+        else:
+            out = self._native_attention(q, k, v, self.heads, mask)
+
+        return self.to_out(out)
+
+    def _native_attention(self, q, k, v, h, mask):
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
         sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
-
         if exists(mask):
             mask = rearrange(mask, 'b ... -> b (...)')
             max_neg_value = -torch.finfo(sim.dtype).max
             mask = repeat(mask, 'b j -> (b h) () j', h=h)
             sim.masked_fill_(~mask, max_neg_value)
-
         # attention, what we cannot get enough of
-        attn = sim.softmax(dim=-1)
-
-        out = einsum('b i j, b j d -> b i d', attn, v)
+        out = sim.softmax(dim=-1)
+        out = einsum('b i j, b j d -> b i d', out, v)
         out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
-        return self.to_out(out)
+        return out
+
+    def _triton_flash_attention(self, q, k, v):
+        out = triton_flash_attention(q, k, v, self.scale)
+        return out
+
+    def _flash_attention_qkv(self, q, k, v):
+        qkv = torch.stack([q, k, v], dim=2)
+        b = qkv.shape[0]
+        n = qkv.shape[1]
+        qkv = rearrange(qkv, 'b n t (h d) -> (b n) t h d', h=self.heads)
+        out = flash_attention_qkv(qkv, self.scale, b, n)
+        out = rearrange(out, '(b n) h d -> b n (h d)', b=b, h=self.heads)
+        return out
+    
+    def _flash_attention_q_kv(self, q, k, v):
+        kv = torch.stack([k, v], dim=2)
+        b = q.shape[0]
+        q_seqlen = q.shape[1]
+        kv_seqlen = kv.shape[1]
+        q = rearrange(q, 'b n (h d) -> (b n) h d', h=self.heads)
+        kv = rearrange(kv, 'b n t (h d) -> (b n) t h d', h=self.heads)
+        out = flash_attention_q_kv(q, kv, self.scale, b, q_seqlen, kv_seqlen)
+        out = rearrange(out, '(b n) h d -> b n (h d)', b=b, h=self.heads)
+        return out
 
 
 class BasicTransformerBlock(nn.Module):

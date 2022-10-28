@@ -46,6 +46,7 @@ from ldm.models.diffusion.ddim import *
 from ldm.modules.diffusionmodules.openaimodel import *
 from ldm.modules.diffusionmodules.model import *
 from ldm.modules.diffusionmodules.model import Decoder, Encoder, Up_module, Down_module, Mid_module, temb_module
+from ldm.modules.attention import enable_flash_attention
 
 class DataLoaderX(DataLoader):
 
@@ -159,6 +160,14 @@ def get_parser(**parser_kwargs):
         const=True,
         default=True,
         help="whether to use fp16",
+    )
+    parser.add_argument(
+        "--flash",
+        type=str2bool,
+        const=True,
+        default=False,
+        nargs="?",
+        help="whether to use flash attention",
     )
     return parser
 
@@ -523,6 +532,8 @@ if __name__ == "__main__":
             "If you want to resume training in a new log folder, "
             "use -n/--name in combination with --resume_from_checkpoint"
         )
+    if opt.flash:
+        enable_flash_attention()
     if opt.resume:
         if not os.path.exists(opt.resume):
             raise ValueError("Cannot find {}".format(opt.resume))
