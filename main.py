@@ -436,6 +436,13 @@ class ImageLogger(Callback):
 
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
+
+    def on_train_start(self, trainer, pl_module):
+        rank_zero_info("Training is starting")
+
+    def on_train_end(self, trainer, pl_module):
+        rank_zero_info("Training is ending")
+
     def on_train_epoch_start(self, trainer, pl_module):
         # Reset the memory use counter
         torch.cuda.reset_peak_memory_stats(trainer.strategy.root_device.index)
@@ -559,12 +566,10 @@ if __name__ == "__main__":
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-
-        # trainer_config["accelerator"] = "cuda"
+  
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
-
-        if not trainer_config["accelerator"] == "gpus":
+        if not trainer_config["accelerator"] == "gpu":
             del trainer_config["accelerator"]
             cpu = True
             print("Running on CPU")
@@ -599,7 +604,7 @@ if __name__ == "__main__":
             "tensorboard":{
                 "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params":{
-                    "save_dir": "/home/lclzm/diff_log/",
+                    "save_dir": logdir,
                     "name": "diff_tb",
                     "log_graph": True
                 }
@@ -611,21 +616,23 @@ if __name__ == "__main__":
             logger_cfg = lightning_config.logger
         else:
             logger_cfg = default_logger_cfg
+        logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
         trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
 
-        # confif the strategy, defualt is ddp
-        if "strategy" in lightning_config:
-            strategy_cfg = lightning_config.strategy
+        # config the strategy, defualt is ddp
+        if "strategy" in trainer_config:
+            strategy_cfg = trainer_config["strategy"]
+            print("Using strategy: {}".format(strategy_cfg["target"]))
         else:
             strategy_cfg = {
                 "target": "pytorch_lightning.strategies.DDPStrategy",
                 "params": {
-                    "ddp_find_unused_parameters": False
+                    "find_unused_parameters": False
                 }
             }
+            print("Using strategy: DDPStrategy")
 
         trainer_kwargs["strategy"] = instantiate_from_config(strategy_cfg)
-
 
         # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
         # specify which metric is used to determine best models
@@ -736,7 +743,7 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            ngpu = trainer_config["devices"]
         else:
             ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:
@@ -781,7 +788,6 @@ if __name__ == "__main__":
             try:
                 for name, m in model.named_parameters():
                     print(name)
-                print("-----start train-----")
                 trainer.fit(model, data)
             except Exception:
                 melk()
