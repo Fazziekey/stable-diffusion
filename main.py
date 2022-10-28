@@ -569,6 +569,8 @@ if __name__ == "__main__":
   
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
+
+        print(trainer_config)
         if not trainer_config["accelerator"] == "gpu":
             del trainer_config["accelerator"]
             cpu = True
@@ -583,7 +585,7 @@ if __name__ == "__main__":
         use_fp16 = trainer_config.get("precision", 32) == 16
         if use_fp16:
             config.model["params"].update({"use_fp16": True})
-
+            print("Using FP16 = {}".format(config.model["params"]["use_fp16"]))
         model = instantiate_from_config(config.model)
 
         # trainer and callbacks
