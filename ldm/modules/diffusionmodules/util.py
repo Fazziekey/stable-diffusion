@@ -196,14 +196,16 @@ def mean_flat(tensor):
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
-def normalization(channels, precise=16):
+def normalization(channels, precision=16):
     """
     Make a standard normalization layer.
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    # return GroupNorm32(32, channels)
-    return GroupNorm16(16, channels)
+    if precision == 16:
+        return GroupNorm16(16, channels)
+    else:
+        return GroupNorm32(32, channels)
 
 
 # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.

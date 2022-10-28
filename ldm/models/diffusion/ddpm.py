@@ -8,7 +8,9 @@ from contextlib import contextmanager
 from functools import partial
 from tqdm import tqdm
 from torchvision.utils import make_grid
+
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
+from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from ldm.modules.ema import LitEma
@@ -82,12 +84,12 @@ class DDPM(pl.LightningModule):
                  use_positional_encodings=False,
                  learn_logvar=False,
                  logvar_init=0.,
-                 use_fp16 = False,
+                 use_fp16 = True,
                  ):
         super().__init__()
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
         self.parameterization = parameterization
-        print(f"{self.__class__.__name__}: Running in {self.parameterization}-prediction mode")
+        rank_zero_info(f"{self.__class__.__name__}: Running in {self.parameterization}-prediction mode")
         self.cond_stage_model = None
         self.clip_denoised = clip_denoised
         self.log_every_t = log_every_t
@@ -138,8 +140,11 @@ class DDPM(pl.LightningModule):
         #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
         #     self.logvar = nn.Parameter(self.logvar, requires_grad=True)
 
+        self.use_fp16 = use_fp16
         if use_fp16:
             self.unet_config["params"].update({"use_fp16": True})
+            rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
+
 
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -306,7 +311,8 @@ class DDPM(pl.LightningModule):
 
     def get_loss(self, pred, target, mean=True):
 
-        target = target.half()
+        if self.use_fp16:
+            target = target.half()
 
         if self.loss_type == 'l1':
             loss = (target - pred).abs()
@@ -369,8 +375,11 @@ class DDPM(pl.LightningModule):
         if len(x.shape) == 3:
             x = x[..., None]
         x = rearrange(x, 'b h w c -> b c h w')
-        # x = x.to(memory_format=torch.contiguous_format).float()
-        x = x.to(memory_format=torch.contiguous_format).float().half()
+
+        if self.use_fp16:
+            x = x.to(memory_format=torch.contiguous_format).float().half()
+        else:
+            x = x.to(memory_format=torch.contiguous_format).float()
         return x
 
     def shared_step(self, batch):
@@ -473,7 +482,7 @@ class LatentDiffusion(DDPM):
                  conditioning_key=None,
                  scale_factor=1.0,
                  scale_by_std=False,
-                 use_fp16=False,
+                 use_fp16=True,
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
@@ -485,7 +494,7 @@ class LatentDiffusion(DDPM):
             conditioning_key = None
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
-        super().__init__(conditioning_key=conditioning_key, use_fp16=use_fp16 *args, **kwargs)
+        super().__init__(conditioning_key=conditioning_key, use_fp16=use_fp16, *args, **kwargs)
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
@@ -499,8 +508,9 @@ class LatentDiffusion(DDPM):
             self.register_buffer('scale_factor', torch.tensor(scale_factor))
         self.first_stage_config = first_stage_config
         self.cond_stage_config = cond_stage_config
-        if use_fp16:
+        if self.use_fp16:
             self.cond_stage_config["params"].update({"use_fp16": True})
+            rank_zero_info("Using fp16 for conditioning stage{}".format(self.cond_stage_config["params"]["use_fp16"]))
         # self.instantiate_first_stage(first_stage_config)
         # self.instantiate_cond_stage(cond_stage_config)
         self.cond_stage_forward = cond_stage_forward
@@ -1446,7 +1456,7 @@ class LatentDiffusion(DDPM):
             assert 'target' in self.scheduler_config
             scheduler = instantiate_from_config(self.scheduler_config)
 
-            print("Setting up LambdaLR scheduler...")
+            rank_zero_info("Setting up LambdaLR scheduler...")
             scheduler = [
                 {
                     'scheduler': LambdaLR(opt, lr_lambda=scheduler.schedule),
