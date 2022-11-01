@@ -85,6 +85,7 @@ class DDPM(pl.LightningModule):
                  learn_logvar=False,
                  logvar_init=0.,
                  use_fp16 = True,
+                 check_nan_inf = False,
                  ):
         super().__init__()
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
@@ -144,6 +145,7 @@ class DDPM(pl.LightningModule):
         if use_fp16:
             self.unet_config["params"].update({"use_fp16": True})
             rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
+        self.check_nan_inf = check_nan_inf
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
                           linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
@@ -309,10 +311,11 @@ class DDPM(pl.LightningModule):
 
     def get_loss(self, pred, target, mean=True):
 
-        if target.isnan().any():
-            raise ValueError("Target contains NaNs")
-        if target.isinf().any():
-            raise ValueError("Target contains Infs")
+        if self.check_nan_inf:
+            if target.isnan().any():
+                rank_zero_info("Warning: Target has nan values")
+            if target.isinf().any():
+                rank_zero_info("Warning: Target has inf values")
 
         if self.use_fp16:
             target = target.half()
@@ -385,10 +388,11 @@ class DDPM(pl.LightningModule):
         else:
             x = x.to(memory_format=torch.contiguous_format).float()
 
-        if x.isnan().any():
-            raise ValueError('nan in input')
-        if x.isinf().any():
-            raise ValueError('inf in input')
+        if self.check_nan_inf:
+            if x.isnan().any():
+                rank_zero_info("Warning: Input has nan values")
+            if x.isinf().any():
+                rank_zero_info("Warning: Input has inf values")
         return x
 
     def shared_step(self, batch):
