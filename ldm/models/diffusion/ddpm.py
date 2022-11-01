@@ -85,6 +85,7 @@ class DDPM(pl.LightningModule):
                  learn_logvar=False,
                  logvar_init=0.,
                  use_fp16 = True,
+                 check_nan_inf = False,
                  ):
         super().__init__()
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
@@ -144,8 +145,7 @@ class DDPM(pl.LightningModule):
         if use_fp16:
             self.unet_config["params"].update({"use_fp16": True})
             rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
-
-
+        self.check_nan_inf = check_nan_inf
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
                           linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
@@ -311,6 +311,12 @@ class DDPM(pl.LightningModule):
 
     def get_loss(self, pred, target, mean=True):
 
+        if self.check_nan_inf:
+            if target.isnan().any():
+                rank_zero_info("Warning: Target has nan values")
+            if target.isinf().any():
+                rank_zero_info("Warning: Target has inf values")
+
         if self.use_fp16:
             target = target.half()
 
@@ -325,6 +331,7 @@ class DDPM(pl.LightningModule):
                 loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
         else:
             raise NotImplementedError("unknown loss type '{loss_type}'")
+            
         return loss
 
     def p_losses(self, x_start, t, noise=None):
@@ -380,6 +387,12 @@ class DDPM(pl.LightningModule):
             x = x.to(memory_format=torch.contiguous_format).float().half()
         else:
             x = x.to(memory_format=torch.contiguous_format).float()
+
+        if self.check_nan_inf:
+            if x.isnan().any():
+                rank_zero_info("Warning: Input has nan values")
+            if x.isinf().any():
+                rank_zero_info("Warning: Input has inf values")
         return x
 
     def shared_step(self, batch):
@@ -510,7 +523,7 @@ class LatentDiffusion(DDPM):
         self.cond_stage_config = cond_stage_config
         if self.use_fp16:
             self.cond_stage_config["params"].update({"use_fp16": True})
-            rank_zero_info("Using fp16 for conditioning stage{}".format(self.cond_stage_config["params"]["use_fp16"]))
+            rank_zero_info("Using fp16 for conditioning stage = {}".format(self.cond_stage_config["params"]["use_fp16"]))
         # self.instantiate_first_stage(first_stage_config)
         # self.instantiate_cond_stage(cond_stage_config)
         self.cond_stage_forward = cond_stage_forward

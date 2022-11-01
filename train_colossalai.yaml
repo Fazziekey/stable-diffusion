@@ -16,6 +16,7 @@ model:
     monitor: val/loss_simple_ema
     scale_factor: 0.18215
     use_ema: False
+    check_nan_inf: False
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
@@ -86,8 +87,9 @@ data:
 lightning:
   trainer:
     accelerator: 'gpu' 
-    devices: 4
+    devices: 2
     log_gpu_memory: all
+    max_epochs: 2
     precision: 16
     auto_select_gpus: False
     strategy:
@@ -96,7 +98,8 @@ lightning:
         use_chunk: False
         enable_distributed_storage: True,
         placement_policy: cuda
-        initial_scale: 32
+        force_outputs_fp32: False
+
     log_every_n_steps: 2
     logger: True
     default_root_dir: "/tmp/diff_log/"
