@@ -8,7 +8,7 @@ from einops import rearrange, repeat
 from torch.utils import checkpoint
 
 try:
-    from ldm.modules.flash_attention import flash_attention_qkv, flash_attention_q_kv, triton_flash_attention, TRITON_AVAILABLE
+    from ldm.modules.flash_attention import flash_attention_qkv, flash_attention_q_kv
     FlASH_AVAILABLE = True
 except:
     FlASH_AVAILABLE = False
@@ -20,8 +20,8 @@ def enable_flash_attention():
     global USE_FLASH
     USE_FLASH = True
     if FlASH_AVAILABLE is False:
-        print("""Please install triton and flash attention to activate new attention kernel.\n 
-            Use \'pip install triton==2.0.0.dev20221011 git+https://github.com/HazyResearch/flash-attention.git@c422fee3776eb3ea24e011ef641fd5fbeb212623#egg=flash_attn\'""")
+        print("Please install flash attention to activate new attention kernel.\n" + 
+              "Use \'pip install git+https://github.com/HazyResearch/flash-attention.git@c422fee3776eb3ea24e011ef641fd5fbeb212623#egg=flash_attn\'")
 
 
 def exists(val):
@@ -190,12 +190,11 @@ class CrossAttention(nn.Module):
         v = self.to_v(context)
         dim_head = q.shape[-1] / self.heads
 
-        if USE_FLASH and FlASH_AVAILABLE and (dim_head <= 128) and ((dim_head % 8) == 0):
+        if USE_FLASH and FlASH_AVAILABLE and q.dtype in (torch.float16, torch.bfloat16) and \
+            dim_head <= 128 and (dim_head % 8) == 0:
+            # print("in flash")
             if q.shape[1] == k.shape[1]:
-                if TRITON_AVAILABLE and k.shape[-1] in (16, 32, 64, 128):
-                    out = self._triton_flash_attention(q, k, v)
-                else:
-                    out = self._flash_attention_qkv(q, k, v)
+                out = self._flash_attention_qkv(q, k, v)
             else:
                 out = self._flash_attention_q_kv(q, k, v)
         else:
@@ -215,10 +214,6 @@ class CrossAttention(nn.Module):
         out = sim.softmax(dim=-1)
         out = einsum('b i j, b j d -> b i d', out, v)
         out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
-        return out
-
-    def _triton_flash_attention(self, q, k, v):
-        out = triton_flash_attention(q, k, v, self.scale)
         return out
 
     def _flash_attention_qkv(self, q, k, v):
