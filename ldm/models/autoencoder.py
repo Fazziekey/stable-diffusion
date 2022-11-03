@@ -292,6 +292,7 @@ class AutoencoderKL(pl.LightningModule):
                  image_key="image",
                  colorize_nlabels=None,
                  monitor=None,
+                 from_pretrained: str=None
                  ):
         super().__init__()
         self.image_key = image_key
@@ -309,6 +310,106 @@ class AutoencoderKL(pl.LightningModule):
             self.monitor = monitor
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
+        from diffusers.modeling_utils import load_state_dict
+        if from_pretrained is not None:
+            state_dict = load_state_dict(from_pretrained)
+            self._load_pretrained_model(state_dict)
+
+    def _state_key_mapping(self, state_dict: dict):
+        import re
+        res_dict = {}
+        key_list = state_dict.keys()
+        key_str = " ".join(key_list)
+        up_block_pattern = re.compile('upsamplers')
+        p1 = re.compile('mid.block_[0-9]')
+        p2 = re.compile('decoder.up.[0-9]')
+        up_blocks_count = int(len(re.findall(up_block_pattern, key_str)) / 2 + 1)
+        for key_, val_ in state_dict.items():
+            key_ = key_.replace("up_blocks", "up").replace("down_blocks", "down").replace('resnets', 'block')\
+                .replace('mid_block', 'mid').replace("mid.block.", "mid.block_")\
+                .replace('mid.attentions.0.key', 'mid.attn_1.k')\
+                .replace('mid.attentions.0.query', 'mid.attn_1.q') \
+                .replace('mid.attentions.0.value', 'mid.attn_1.v') \
+                .replace('mid.attentions.0.group_norm', 'mid.attn_1.norm') \
+                .replace('mid.attentions.0.proj_attn', 'mid.attn_1.proj_out')\
+                .replace('upsamplers.0', 'upsample')\
+                .replace('downsamplers.0', 'downsample')\
+                .replace('conv_shortcut', 'nin_shortcut')\
+                .replace('conv_norm_out', 'norm_out')
+
+            mid_list = re.findall(p1, key_)
+            if len(mid_list) != 0:
+                mid_str = mid_list[0]
+                mid_id = int(mid_str[-1]) + 1
+                key_ = key_.replace(mid_str, mid_str[:-1] + str(mid_id))
+
+            up_list = re.findall(p2, key_)
+            if len(up_list) != 0:
+                up_str = up_list[0]
+                up_id = up_blocks_count - 1 -int(up_str[-1])
+                key_ = key_.replace(up_str, up_str[:-1] + str(up_id))
+            res_dict[key_] = val_
+        return res_dict
+
+    def _load_pretrained_model(self, state_dict, ignore_mismatched_sizes=False):
+        state_dict = self._state_key_mapping(state_dict)
+        model_state_dict = self.state_dict()
+        loaded_keys = [k for k in state_dict.keys()]
+        expected_keys = list(model_state_dict.keys())
+        original_loaded_keys = loaded_keys
+        missing_keys = list(set(expected_keys) - set(loaded_keys))
+        unexpected_keys = list(set(loaded_keys) - set(expected_keys))
+
+        def _find_mismatched_keys(
+            state_dict,
+            model_state_dict,
+            loaded_keys,
+            ignore_mismatched_sizes,
+        ):
+            mismatched_keys = []
+            if ignore_mismatched_sizes:
+                for checkpoint_key in loaded_keys:
+                    model_key = checkpoint_key
+
+                    if (
+                        model_key in model_state_dict
+                        and state_dict[checkpoint_key].shape != model_state_dict[model_key].shape
+                    ):
+                        mismatched_keys.append(
+                            (checkpoint_key, state_dict[checkpoint_key].shape, model_state_dict[model_key].shape)
+                        )
+                        del state_dict[checkpoint_key]
+            return mismatched_keys
+        if state_dict is not None:
+            # Whole checkpoint
+            mismatched_keys = _find_mismatched_keys(
+                state_dict,
+                model_state_dict,
+                original_loaded_keys,
+                ignore_mismatched_sizes,
+            )
+            error_msgs = self._load_state_dict_into_model(state_dict)
+        return missing_keys, unexpected_keys, mismatched_keys, error_msgs
+
+    def _load_state_dict_into_model(self, state_dict):
+        # Convert old format to new format if needed from a PyTorch state_dict
+        # copy state_dict so _load_from_state_dict can modify it
+        state_dict = state_dict.copy()
+        error_msgs = []
+
+        # PyTorch's `_load_from_state_dict` does not copy parameters in a module's descendants
+        # so we need to apply the function recursively.
+        def load(module: torch.nn.Module, prefix=""):
+            args = (state_dict, prefix, {}, True, [], [], error_msgs)
+            module._load_from_state_dict(*args)
+
+            for name, child in module._modules.items():
+                if child is not None:
+                    load(child, prefix + name + ".")
+
+        load(self)
+
+        return error_msgs
 
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]

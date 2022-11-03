@@ -19,6 +19,7 @@ from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
+from diffusers.models.unet_2d import UNet2DModel
 
 from clip.model import Bottleneck
 from transformers.models.clip.modeling_clip import CLIPTextTransformer
@@ -562,7 +563,6 @@ if __name__ == "__main__":
 
         # model
         model = instantiate_from_config(config.model)
-
         # trainer and callbacks
         trainer_kwargs = dict()
 
@@ -587,7 +587,7 @@ if __name__ == "__main__":
             "tensorboard":{
                 "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params":{
-                    "save_dir": "/home/lcmql/diff_log/",
+                    "save_dir": "/home/lclzm/diff_log/",
                     "name": "diff_tb",
                     "log_graph": True
                 }
