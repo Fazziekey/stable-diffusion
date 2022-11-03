@@ -16,13 +16,14 @@ model:
     monitor: val/loss_simple_ema
     scale_factor: 0.18215
     use_ema: False
+    check_nan_inf: False
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
         warm_up_steps: [ 10000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
-        f_start: [ 1.e-10 ]
+        f_start: [ 1.e-6 ]
         f_max: [ 1. ]
         f_min: [ 1. ]
 
@@ -42,7 +43,6 @@ model:
         context_dim: 768
         use_checkpoint: False
         legacy: False
-        use_fp16: True
 
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
@@ -75,7 +75,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 1
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset
@@ -86,18 +86,25 @@ data:
 
 lightning:
   trainer:
-    gpus: '0,1,2,3'
+    accelerator: 'gpu' 
+    devices: 4
     log_gpu_memory: all
+    max_epochs: 2
     precision: 16
+    auto_select_gpus: False
     strategy:
-      target: pytorch_lightning.strategies.DeepSpeedStrategy
+      target: pytorch_lightning.strategies.ColossalAIStrategy
       params:
-        stage: 2
-        zero_optimization: True
-        offload_optimizer: False
-        offload_parameters: False
+        use_chunk: False
+        enable_distributed_storage: True,
+        placement_policy: cuda
+        force_outputs_fp32: False
+        initial_scale: 65536
+        min_scale: 1
+        max_scale: 65536
+        # max_scale: 4294967296
+
     log_every_n_steps: 2
-#    max_steps: 6o
     logger: True
     default_root_dir: "/tmp/diff_log/"
     profiler: pytorch
@@ -107,8 +114,6 @@ lightning:
       target: pytorch_lightning.loggers.WandbLogger
       params:
           name: nowname
-          save_dir: logdir
+          save_dir: "/tmp/diff_log/"
           offline: opt.debug
           id: nowname
-    
-

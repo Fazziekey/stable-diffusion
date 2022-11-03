@@ -22,7 +22,7 @@ model:
       params:
         warm_up_steps: [ 10000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
-        f_start: [ 1.e-6 ]
+        f_start: [ 1.e-10 ]
         f_max: [ 1. ]
         f_min: [ 1. ]
 
@@ -42,6 +42,7 @@ model:
         context_dim: 768
         use_checkpoint: False
         legacy: False
+        use_fp16: True
 
     first_stage_config:
       target: ldm.models.autoencoder.AutoencoderKL
@@ -74,7 +75,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 4
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset
@@ -85,15 +86,32 @@ data:
 
 lightning:
   trainer:
-    gpus: '0,1,2,3'
+    accelerator: 'gpu' 
+    devices: 4
     log_gpu_memory: all
-    precision: 32
+    max_epochs: 2
+    precision: 16
+    auto_select_gpus: False
     strategy:
-      target: pytorch_lightning.strategies.DDPStrategy
+      target: pytorch_lightning.strategies.DeepSpeedStrategy
       params:
-        find_unused_parameters: False
+        stage: 2
+        zero_optimization: True
+        offload_optimizer: False
+        offload_parameters: False
     log_every_n_steps: 2
 #    max_steps: 6o
     logger: True
     default_root_dir: "/tmp/diff_log/"
     profiler: pytorch
+
+  logger_config:
+    wandb:
+      target: pytorch_lightning.loggers.WandbLogger
+      params:
+          name: nowname
+          save_dir: logdir
+          offline: opt.debug
+          id: nowname
+    
+

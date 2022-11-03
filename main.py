@@ -597,6 +597,9 @@ if __name__ == "__main__":
         if use_fp16:
             config.model["params"].update({"use_fp16": True})
             print("Using FP16 = {}".format(config.model["params"]["use_fp16"]))
+        else:
+            config.model["params"].update({"use_fp16": False})
+        
         model = instantiate_from_config(config.model)
 
         # trainer and callbacks
