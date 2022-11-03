@@ -16,7 +16,6 @@ model:
     monitor: val/loss_simple_ema
     scale_factor: 0.18215
     use_ema: False
-    check_nan_inf: False
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
@@ -75,7 +74,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 1
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset
@@ -87,23 +86,20 @@ data:
 lightning:
   trainer:
     accelerator: 'gpu' 
-    devices: 2
+    devices: 4
     log_gpu_memory: all
     max_epochs: 2
     precision: 16
     auto_select_gpus: False
     strategy:
-      target: pytorch_lightning.strategies.ColossalAIStrategy
+      target: pytorch_lightning.strategies.DDPStrategy
       params:
-        use_chunk: False
-        enable_distributed_storage: True,
-        placement_policy: cuda
-        force_outputs_fp32: False
-
+        find_unused_parameters: False
     log_every_n_steps: 2
+#    max_steps: 6o
     logger: True
     default_root_dir: "/tmp/diff_log/"
-    profiler: pytorch
+    # profiler: pytorch
 
   logger_config:
     wandb:
