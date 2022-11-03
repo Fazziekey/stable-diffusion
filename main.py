@@ -20,6 +20,7 @@ from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
+from diffusers.models.unet_2d import UNet2DModel
 
 from clip.model import Bottleneck
 from transformers.models.clip.modeling_clip import CLIPTextTransformer
@@ -601,7 +602,6 @@ if __name__ == "__main__":
             config.model["params"].update({"use_fp16": False})
         
         model = instantiate_from_config(config.model)
-
         # trainer and callbacks
         trainer_kwargs = dict()
 

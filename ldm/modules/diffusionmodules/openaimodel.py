@@ -4,6 +4,7 @@ import math
 from typing import Iterable
 
 import numpy as np
+import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -473,6 +474,7 @@ class UNetModel(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
+        from_pretrained: str=None
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -699,6 +701,186 @@ class UNetModel(nn.Module):
         )
         # if use_fp16:
             # self.convert_to_fp16()
+        from diffusers.modeling_utils import load_state_dict
+        if from_pretrained is not None:
+            state_dict = load_state_dict(from_pretrained)
+            self._load_pretrained_model(state_dict)
+
+    def _input_blocks_mapping(self, input_dict):
+        res_dict = {}
+        for key_, value_ in input_dict.items():
+            id_0 = int(key_[13])
+            if "resnets" in key_:
+                id_1 = int(key_[23])
+                target_id = 3 * id_0 + 1 + id_1
+                post_fix = key_[25:].replace('time_emb_proj', 'emb_layers.1')\
+                    .replace('norm1', 'in_layers.0')\
+                    .replace('norm2', 'out_layers.0')\
+                    .replace('conv1', 'in_layers.2')\
+                    .replace('conv2', 'out_layers.3')\
+                    .replace('conv_shortcut', 'skip_connection')
+                res_dict["input_blocks." + str(target_id) + '.0.' + post_fix] = value_
+            elif "attentions" in key_:
+                id_1 = int(key_[26])
+                target_id = 3 * id_0 + 1 + id_1
+                post_fix = key_[28:]
+                res_dict["input_blocks." + str(target_id) + '.1.' + post_fix] = value_
+            elif "downsamplers" in key_:
+                post_fix = key_[35:]
+                target_id = 3 * (id_0 + 1)
+                res_dict["input_blocks." + str(target_id) + '.0.op.' + post_fix] = value_
+        return res_dict
+
+
+    def _mid_blocks_mapping(self, mid_dict):
+        res_dict = {}
+        for key_, value_ in mid_dict.items():
+            if "resnets" in key_:
+                temp_key_ =key_.replace('time_emb_proj', 'emb_layers.1') \
+                    .replace('norm1', 'in_layers.0') \
+                    .replace('norm2', 'out_layers.0') \
+                    .replace('conv1', 'in_layers.2') \
+                    .replace('conv2', 'out_layers.3') \
+                    .replace('conv_shortcut', 'skip_connection')\
+                    .replace('middle_block.resnets.0', 'middle_block.0')\
+                    .replace('middle_block.resnets.1', 'middle_block.2')
+                res_dict[temp_key_] = value_
+            elif "attentions" in key_:
+                res_dict[key_.replace('attentions.0', '1')] = value_
+        return res_dict
+
+    def _other_blocks_mapping(self, other_dict):
+        res_dict = {}
+        for key_, value_ in other_dict.items():
+            tmp_key = key_.replace('conv_in', 'input_blocks.0.0')\
+                            .replace('time_embedding.linear_1', 'time_embed.0')\
+                            .replace('time_embedding.linear_2', 'time_embed.2')\
+                            .replace('conv_norm_out', 'out.0')\
+                            .replace('conv_out', 'out.2')
+            res_dict[tmp_key] = value_
+        return res_dict
+
+
+    def _output_blocks_mapping(self, output_dict):
+        res_dict = {}
+        for key_, value_ in output_dict.items():
+            id_0 = int(key_[14])
+            if "resnets" in key_:
+                id_1 = int(key_[24])
+                target_id = 3 * id_0 + id_1
+                post_fix = key_[26:].replace('time_emb_proj', 'emb_layers.1') \
+                    .replace('norm1', 'in_layers.0') \
+                    .replace('norm2', 'out_layers.0') \
+                    .replace('conv1', 'in_layers.2') \
+                    .replace('conv2', 'out_layers.3') \
+                    .replace('conv_shortcut', 'skip_connection')
+                res_dict["output_blocks." + str(target_id) + '.0.' + post_fix] = value_
+            elif "attentions" in key_:
+                id_1 = int(key_[27])
+                target_id = 3 * id_0 + id_1
+                post_fix = key_[29:]
+                res_dict["output_blocks." + str(target_id) + '.1.' + post_fix] = value_
+            elif "upsamplers" in key_:
+                post_fix = key_[34:]
+                target_id = 3 * (id_0 + 1) - 1
+                mid_str = '.2.conv.' if target_id != 2 else '.1.conv.'
+                res_dict["output_blocks." + str(target_id) + mid_str + post_fix] = value_
+        return res_dict
+
+    def _state_key_mapping(self, state_dict: dict):
+        import re
+        res_dict = {}
+        input_dict = {}
+        mid_dict = {}
+        output_dict = {}
+        other_dict = {}
+        for key_, value_ in state_dict.items():
+            if "down_blocks" in key_:
+                input_dict[key_.replace('down_blocks', 'input_blocks')] = value_
+            elif "up_blocks" in key_:
+                output_dict[key_.replace('up_blocks', 'output_blocks')] = value_
+            elif "mid_block" in key_:
+                mid_dict[key_.replace('mid_block', 'middle_block')] = value_
+            else:
+                other_dict[key_] = value_
+
+        input_dict = self._input_blocks_mapping(input_dict)
+        output_dict = self._output_blocks_mapping(output_dict)
+        mid_dict = self._mid_blocks_mapping(mid_dict)
+        other_dict = self._other_blocks_mapping(other_dict)
+        # key_list = state_dict.keys()
+        # key_str = " ".join(key_list)
+
+        # for key_, val_ in state_dict.items():
+        #     key_ = key_.replace("down_blocks", "input_blocks")\
+        #         .replace("up_blocks", 'output_blocks')
+        #     res_dict[key_] = val_
+        res_dict.update(input_dict)
+        res_dict.update(output_dict)
+        res_dict.update(mid_dict)
+        res_dict.update(other_dict)
+
+        return res_dict
+
+    def _load_pretrained_model(self, state_dict, ignore_mismatched_sizes=False):
+        state_dict = self._state_key_mapping(state_dict)
+        model_state_dict = self.state_dict()
+        loaded_keys = [k for k in state_dict.keys()]
+        expected_keys = list(model_state_dict.keys())
+        original_loaded_keys = loaded_keys
+        missing_keys = list(set(expected_keys) - set(loaded_keys))
+        unexpected_keys = list(set(loaded_keys) - set(expected_keys))
+
+        def _find_mismatched_keys(
+            state_dict,
+            model_state_dict,
+            loaded_keys,
+            ignore_mismatched_sizes,
+        ):
+            mismatched_keys = []
+            if ignore_mismatched_sizes:
+                for checkpoint_key in loaded_keys:
+                    model_key = checkpoint_key
+
+                    if (
+                        model_key in model_state_dict
+                        and state_dict[checkpoint_key].shape != model_state_dict[model_key].shape
+                    ):
+                        mismatched_keys.append(
+                            (checkpoint_key, state_dict[checkpoint_key].shape, model_state_dict[model_key].shape)
+                        )
+                        del state_dict[checkpoint_key]
+            return mismatched_keys
+        if state_dict is not None:
+            # Whole checkpoint
+            mismatched_keys = _find_mismatched_keys(
+                state_dict,
+                model_state_dict,
+                original_loaded_keys,
+                ignore_mismatched_sizes,
+            )
+            error_msgs = self._load_state_dict_into_model(state_dict)
+        return missing_keys, unexpected_keys, mismatched_keys, error_msgs
+
+    def _load_state_dict_into_model(self, state_dict):
+        # Convert old format to new format if needed from a PyTorch state_dict
+        # copy state_dict so _load_from_state_dict can modify it
+        state_dict = state_dict.copy()
+        error_msgs = []
+
+        # PyTorch's `_load_from_state_dict` does not copy parameters in a module's descendants
+        # so we need to apply the function recursively.
+        def load(module: torch.nn.Module, prefix=""):
+            args = (state_dict, prefix, {}, True, [], [], error_msgs)
+            module._load_from_state_dict(*args)
+
+            for name, child in module._modules.items():
+                if child is not None:
+                    load(child, prefix + name + ".")
+
+        load(self)
+
+        return error_msgs
 
     def convert_to_fp16(self):
         """

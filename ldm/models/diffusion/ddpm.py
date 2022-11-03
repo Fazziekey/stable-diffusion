@@ -535,6 +535,8 @@ class LatentDiffusion(DDPM):
             self.init_from_ckpt(ckpt_path, ignore_keys)
             self.restarted_from_ckpt = True
 
+
+
     def configure_sharded_model(self) -> None:
         self.model = DiffusionWrapper(self.unet_config, self.conditioning_key)
         count_params(self.model, verbose=True)
