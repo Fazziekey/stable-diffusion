@@ -587,7 +587,7 @@ if __name__ == "__main__":
             "tensorboard":{
                 "target": "pytorch_lightning.loggers.TensorBoardLogger",
                 "params":{
-                    "save_dir": "/home/lclzm/diff_log/",
+                    "save_dir": "/home/lcmql/diff_log/",
                     "name": "diff_tb",
                     "log_graph": True
                 }
