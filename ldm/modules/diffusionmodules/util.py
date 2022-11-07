@@ -199,13 +199,13 @@ def mean_flat(tensor):
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
-def normalization(channels, precision=16):
+def normalization(channels, use_fp16 = True):
     """
     Make a standard normalization layer.
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    if precision == 16:
+    if use_fp16:
         return GroupNorm16(16, channels)
     else:
         return GroupNorm32(32, channels)

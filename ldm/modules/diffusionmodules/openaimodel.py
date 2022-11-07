@@ -192,6 +192,7 @@ class ResBlock(TimestepBlock):
         use_checkpoint=False,
         up=False,
         down=False,
+        use_fp16=True,
     ):
         super().__init__()
         self.channels = channels
@@ -201,9 +202,10 @@ class ResBlock(TimestepBlock):
         self.use_conv = use_conv
         self.use_checkpoint = use_checkpoint
         self.use_scale_shift_norm = use_scale_shift_norm
+        self.use_fp16 = use_fp16
 
         self.in_layers = nn.Sequential(
-            normalization(channels),
+            normalization(channels, use_fp16=self.use_fp16),
             nn.SiLU(),
             conv_nd(dims, channels, self.out_channels, 3, padding=1),
         )
@@ -227,7 +229,7 @@ class ResBlock(TimestepBlock):
             ),
         )
         self.out_layers = nn.Sequential(
-            normalization(self.out_channels),
+            normalization(self.out_channels, use_fp16=self.use_fp16),
             nn.SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
@@ -294,8 +296,10 @@ class AttentionBlock(nn.Module):
         num_head_channels=-1,
         use_checkpoint=False,
         use_new_attention_order=False,
+        use_fp16=True,
     ):
         super().__init__()
+        self.use_fp16 = use_fp16
         self.channels = channels
         if num_head_channels == -1:
             self.num_heads = num_heads
@@ -305,7 +309,7 @@ class AttentionBlock(nn.Module):
             ), f"q,k,v channels {channels} is not divisible by num_head_channels {num_head_channels}"
             self.num_heads = channels // num_head_channels
         self.use_checkpoint = use_checkpoint
-        self.norm = normalization(channels)
+        self.norm = normalization(channels, use_fp16=self.use_fp16)
         self.qkv = conv_nd(1, channels, channels * 3, 1)
         if use_new_attention_order:
             # split qkv before split heads
@@ -507,6 +511,7 @@ class UNetModel(nn.Module):
         self.num_classes = num_classes
         self.use_checkpoint = use_checkpoint
         self.dtype = th.float16 if use_fp16 else th.float32
+        self.use_fp16 = use_fp16
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
@@ -544,6 +549,7 @@ class UNetModel(nn.Module):
                         dims=dims,
                         use_checkpoint=use_checkpoint,
                         use_scale_shift_norm=use_scale_shift_norm,
+                        use_fp16=use_fp16,
                     )
                 ]
                 ch = mult * model_channels
@@ -563,6 +569,7 @@ class UNetModel(nn.Module):
                             num_heads=num_heads,
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
+                            use_fp16=use_fp16,
                         ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim, use_checkpoint=use_checkpoint,
                         )
@@ -583,6 +590,7 @@ class UNetModel(nn.Module):
                             use_checkpoint=use_checkpoint,
                             use_scale_shift_norm=use_scale_shift_norm,
                             down=True,
+                            use_fp16=use_fp16,
                         )
                         if resblock_updown
                         else Downsample(
@@ -611,6 +619,7 @@ class UNetModel(nn.Module):
                 dims=dims,
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
+                use_fp16=use_fp16,
             ),
             AttentionBlock(
                 ch,
@@ -618,6 +627,7 @@ class UNetModel(nn.Module):
                 num_heads=num_heads,
                 num_head_channels=dim_head,
                 use_new_attention_order=use_new_attention_order,
+                use_fp16=use_fp16,
             ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         ),
@@ -628,6 +638,7 @@ class UNetModel(nn.Module):
                 dims=dims,
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
+                use_fp16=use_fp16,
             ),
         )
         self._feature_size += ch
@@ -645,6 +656,7 @@ class UNetModel(nn.Module):
                         dims=dims,
                         use_checkpoint=use_checkpoint,
                         use_scale_shift_norm=use_scale_shift_norm,
+                        use_fp16=use_fp16,
                     )
                 ]
                 ch = model_channels * mult
@@ -664,6 +676,7 @@ class UNetModel(nn.Module):
                             num_heads=num_heads_upsample,
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
+                            use_fp16=use_fp16,
                         ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         )
@@ -680,6 +693,7 @@ class UNetModel(nn.Module):
                             use_checkpoint=use_checkpoint,
                             use_scale_shift_norm=use_scale_shift_norm,
                             up=True,
+                            use_fp16=use_fp16,
                         )
                         if resblock_updown
                         else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
@@ -689,18 +703,17 @@ class UNetModel(nn.Module):
                 self._feature_size += ch
 
         self.out = nn.Sequential(
-            normalization(ch),
+            normalization(ch, use_fp16 = self.use_fp16),
             nn.SiLU(),
             zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
         )
         if self.predict_codebook_ids:
             self.id_predictor = nn.Sequential(
-            normalization(ch),
+            normalization(ch, use_fp16 = self.use_fp16),
             conv_nd(dims, model_channels, n_embed, 1),
             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
         )
-        # if use_fp16:
-            # self.convert_to_fp16()
+
         from diffusers.modeling_utils import load_state_dict
         if from_pretrained is not None:
             state_dict = load_state_dict(from_pretrained)
@@ -911,7 +924,7 @@ class UNetModel(nn.Module):
             self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
         hs = []
-        t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
+        t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False, use_fp16=self.use_fp16)
         emb = self.time_embed(t_emb)
 
         if self.num_classes is not None:
@@ -1011,6 +1024,7 @@ class EncoderUNetModel(nn.Module):
                         dims=dims,
                         use_checkpoint=use_checkpoint,
                         use_scale_shift_norm=use_scale_shift_norm,
+                        use_fp16=use_fp16,
                     )
                 ]
                 ch = mult * model_channels
@@ -1022,6 +1036,7 @@ class EncoderUNetModel(nn.Module):
                             num_heads=num_heads,
                             num_head_channels=num_head_channels,
                             use_new_attention_order=use_new_attention_order,
+                            use_fp16=use_fp16,
                         )
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
@@ -1040,6 +1055,7 @@ class EncoderUNetModel(nn.Module):
                             use_checkpoint=use_checkpoint,
                             use_scale_shift_norm=use_scale_shift_norm,
                             down=True,
+                            use_fp16=use_fp16,
                         )
                         if resblock_updown
                         else Downsample(
@@ -1060,6 +1076,7 @@ class EncoderUNetModel(nn.Module):
                 dims=dims,
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
+                use_fp16=use_fp16,
             ),
             AttentionBlock(
                 ch,
@@ -1067,6 +1084,7 @@ class EncoderUNetModel(nn.Module):
                 num_heads=num_heads,
                 num_head_channels=num_head_channels,
                 use_new_attention_order=use_new_attention_order,
+                use_fp16=use_fp16,
             ),
             ResBlock(
                 ch,
@@ -1075,13 +1093,14 @@ class EncoderUNetModel(nn.Module):
                 dims=dims,
                 use_checkpoint=use_checkpoint,
                 use_scale_shift_norm=use_scale_shift_norm,
+                use_fp16=use_fp16,
             ),
         )
         self._feature_size += ch
         self.pool = pool
         if pool == "adaptive":
             self.out = nn.Sequential(
-                normalization(ch),
+                normalization(ch, use_fp16=self.use_fp16),
                 nn.SiLU(),
                 nn.AdaptiveAvgPool2d((1, 1)),
                 zero_module(conv_nd(dims, ch, out_channels, 1)),
@@ -1090,7 +1109,7 @@ class EncoderUNetModel(nn.Module):
         elif pool == "attention":
             assert num_head_channels != -1
             self.out = nn.Sequential(
-                normalization(ch),
+                normalization(ch, use_fp16=self.use_fp16),
                 nn.SiLU(),
                 AttentionPool2d(
                     (image_size // ds), ch, num_head_channels, out_channels
@@ -1133,7 +1152,7 @@ class EncoderUNetModel(nn.Module):
         :param timesteps: a 1-D batch of timesteps.
         :return: an [N x K] Tensor of outputs.
         """
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels, use_fp16=self.use_fp16))
 
         results = []
         h = x.type(self.dtype)

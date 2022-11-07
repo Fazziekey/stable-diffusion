@@ -145,6 +145,9 @@ class DDPM(pl.LightningModule):
         if use_fp16:
             self.unet_config["params"].update({"use_fp16": True})
             rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
+        else:
+            self.unet_config["params"].update({"use_fp16": False})
+            rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
         self.check_nan_inf = check_nan_inf
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -523,6 +526,9 @@ class LatentDiffusion(DDPM):
         self.cond_stage_config = cond_stage_config
         if self.use_fp16:
             self.cond_stage_config["params"].update({"use_fp16": True})
+            rank_zero_info("Using fp16 for conditioning stage = {}".format(self.cond_stage_config["params"]["use_fp16"]))
+        else:
+            self.cond_stage_config["params"].update({"use_fp16": False})
             rank_zero_info("Using fp16 for conditioning stage = {}".format(self.cond_stage_config["params"]["use_fp16"]))
         # self.instantiate_first_stage(first_stage_config)
         # self.instantiate_cond_stage(cond_stage_config)
