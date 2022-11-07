@@ -9,23 +9,22 @@ model:
     timesteps: 1000
     first_stage_key: image
     cond_stage_key: caption
-    image_size: 32
+    image_size: 64
     channels: 4
     cond_stage_trainable: false   # Note: different from the one we trained before
     conditioning_key: crossattn
     monitor: val/loss_simple_ema
     scale_factor: 0.18215
     use_ema: False
-    check_nan_inf: False
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [ 10000 ]
+        warm_up_steps: [ 1 ] # NOTE for resuming. use 10000 if starting from scratch
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
         f_start: [ 1.e-6 ]
-        f_max: [ 1. ]
-        f_min: [ 1. ]
+        f_max: [ 1.e-4 ]
+        f_min: [ 1.e-10 ]
 
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
@@ -77,7 +76,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 1
+    batch_size: 64
     wrap: False
     train:
       target: ldm.data.base.Txt2ImgIterableBaseDataset

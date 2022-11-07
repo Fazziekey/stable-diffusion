@@ -22,9 +22,9 @@ model:
       params:
         warm_up_steps: [ 10000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
-        f_start: [ 1.e-10 ]
-        f_max: [ 1. ]
-        f_min: [ 1. ]
+        f_start: [ 1.e-6 ]
+        f_max: [ 1.e-4 ]
+        f_min: [ 1.e-10 ]
 
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel

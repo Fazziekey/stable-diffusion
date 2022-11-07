@@ -16,11 +16,12 @@ model:
     monitor: val/loss_simple_ema
     scale_factor: 0.18215
     use_ema: False
+    check_nan_inf: False
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [ 100 ]
+        warm_up_steps: [ 10000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
         f_start: [ 1.e-6 ]
         f_max: [ 1.e-4 ]
@@ -76,14 +77,14 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 32
     wrap: False
     train:
-      target: ldm.data.base.Txt2ImgIterableBaseDataset
-      params:
-        file_path: "/data/scratch/diffuser/laion_part0/"
-        world_size: 1
-        rank: 0
+      target: ldm.data.pokemon.PokemonDataset
+      # params:
+        # file_path: "/data/scratch/diffuser/laion_part0/"
+        # world_size: 1
+        # rank: 0
 
 lightning:
   trainer:
@@ -94,14 +95,21 @@ lightning:
     precision: 16
     auto_select_gpus: False
     strategy:
-      target: pytorch_lightning.strategies.DDPStrategy
+      target: pytorch_lightning.strategies.ColossalAIStrategy
       params:
-        find_unused_parameters: False
+        use_chunk: False
+        enable_distributed_storage: True,
+        placement_policy: cuda
+        force_outputs_fp32: False
+        initial_scale: 65536
+        min_scale: 1
+        max_scale: 65536
+        # max_scale: 4294967296
+
     log_every_n_steps: 2
-#    max_steps: 6o
     logger: True
     default_root_dir: "/tmp/diff_log/"
-    # profiler: pytorch
+    profiler: pytorch
 
   logger_config:
     wandb:

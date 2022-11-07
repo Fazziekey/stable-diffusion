@@ -85,7 +85,6 @@ class DDPM(pl.LightningModule):
                  learn_logvar=False,
                  logvar_init=0.,
                  use_fp16 = True,
-                 check_nan_inf = False,
                  ):
         super().__init__()
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
@@ -148,7 +147,6 @@ class DDPM(pl.LightningModule):
         else:
             self.unet_config["params"].update({"use_fp16": False})
             rank_zero_info("Using FP16 for UNet = {}".format(self.unet_config["params"]["use_fp16"]))
-        self.check_nan_inf = check_nan_inf
 
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
                           linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
@@ -314,11 +312,13 @@ class DDPM(pl.LightningModule):
 
     def get_loss(self, pred, target, mean=True):
 
-        if self.check_nan_inf:
-            if target.isnan().any():
-                rank_zero_info("Warning: Target has nan values")
-            if target.isinf().any():
-                rank_zero_info("Warning: Target has inf values")
+        if pred.isnan().any():
+            print("Warning: Prediction has nan values")
+            lr = self.optimizers().param_groups[0]['lr']
+            # self.log('lr_abs', lr, prog_bar=True, logger=True, on_step=True, on_epoch=False)
+            print(f"lr: {lr}")
+        if pred.isinf().any():
+            print("Warning: Prediction has inf values")
 
         if self.use_fp16:
             target = target.half()
@@ -334,7 +334,16 @@ class DDPM(pl.LightningModule):
                 loss = torch.nn.functional.mse_loss(target, pred, reduction='none')
         else:
             raise NotImplementedError("unknown loss type '{loss_type}'")
-            
+                   
+        if loss.isnan().any():
+            print("Warning: loss has nan values")
+            print("loss: ", loss[0][0][0])
+            raise ValueError("loss has nan values")
+        if loss.isinf().any():
+            print("Warning: loss has inf values")
+            print("loss: ", loss)
+            raise ValueError("loss has inf values")
+
         return loss
 
     def p_losses(self, x_start, t, noise=None):
@@ -391,11 +400,6 @@ class DDPM(pl.LightningModule):
         else:
             x = x.to(memory_format=torch.contiguous_format).float()
 
-        if self.check_nan_inf:
-            if x.isnan().any():
-                rank_zero_info("Warning: Input has nan values")
-            if x.isinf().any():
-                rank_zero_info("Warning: Input has inf values")
         return x
 
     def shared_step(self, batch):
