@@ -100,10 +100,6 @@ lightning:
         enable_distributed_storage: True,
         placement_policy: cuda
         force_outputs_fp32: False
-        initial_scale: 65536
-        min_scale: 1
-        max_scale: 65536
-        # max_scale: 4294967296
 
     log_every_n_steps: 2
     logger: True

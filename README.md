@@ -5,8 +5,8 @@ We take advantage of Colosssal-AI to exploit multiple optimization strategies
 , e.g. data parallelism, tensor parallelism, mixed precision & ZeRO, to scale the training to multiple GPUs.
 
 
+![](assets/stable-samples/txt2img/Merged-0001.png)
 
-![txt2img-stable2](assets/stable-samples/txt2img/merged-0006.png)
 [Stable Diffusion](#stable-diffusion-v1) is a latent text-to-image diffusion
 model.
 Thanks to a generous compute donation from [Stability AI](https://stability.ai/) and support from [LAION](https://laion.ai/), we were able to train a Latent Diffusion Model on 512x512 images from a subset of the [LAION-5B](https://laion.ai/blog/laion-5b/) database. 
@@ -41,6 +41,16 @@ git checkout v0.1.10
 pip install .
 ```
 
+### Install colossalai lightning 
+```
+git clone -b colossalai https://github.com/Fazziekey/lightning.git
+pip install .
+```
+
+## Dataset
+The DataSet is from [LAION-5B](https://laion.ai/blog/laion-5b/), the subset of [LAION](https://laion.ai/), 
+you should the change the `data.file_path` in the `config/train_colossalai.yaml`
+
 ## Training
 
 we provide the script `train.sh` to run the training task , and three Stategy in `configs`:`train_colossalai.yaml`, `train_ddp.yaml`, `train_deepspeed.yaml`
@@ -50,6 +60,9 @@ for example, you can run the training from colossalai by
 python main.py --logdir /tmp -t --postfix test -b config/train_colossalai.yaml 
 ```
 
+- you can change the `--logdir` the save the log information and the last checkpoint
+
+### Training config
 you can change the trainging config in the yaml file
 
 - accelerator: acceleratortype, default 'gpu' 
